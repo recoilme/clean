@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -20,6 +23,14 @@ import (
 var (
 	whiteTags = " address, article, aside, a, abbr, b, bdi, bdo, big, blockquote, body, br, caption, cite, code, data, dd, del, dfn, div, dl, dt, em, figcaption, figure, footer, h1, h2, h3, h4, h5, h6, html, header, hr, i, img, ins, kbd, li, main, mark, nav, ol, p, pre, q, rp, rt, ruby, s, samp, section, small, span, strike, strong, sub, sup, table, tbody, td, template, tfoot, th, thead, time, tr, tt, u, ul, var,"
 )
+
+type density struct {
+	chars    int
+	tags     int
+	linkchar int
+	linktag  int
+	txt      string
+}
 
 // Preprocess some string
 func Preprocess(fragment string, pretty bool) (string, error) {
@@ -158,7 +169,7 @@ func Preprocess(fragment string, pretty bool) (string, error) {
 }
 
 //Clean return cleaned html
-func Clean(s string) (string, error) {
+func Clean(s string, extract bool) (string, error) {
 	s, err := Preprocess(s, false)
 	if err != nil {
 		return s, err
@@ -170,6 +181,9 @@ func Clean(s string) (string, error) {
 		if before == s {
 			break
 		}
+	}
+	if extract {
+		s = MainContent(s)
 	}
 	return Preprocess(s, true)
 }
@@ -231,14 +245,169 @@ func GetUtf8(geturl string) (s string, err error) {
 }
 
 // URI get content from url and clean
-func URI(u string) (s string, err error) {
+func URI(u string, extract bool) (s string, err error) {
 	s, err = GetUtf8(u)
 	if err != nil {
 		return
 	}
-	s, err = Clean(s)
+	s, err = Clean(s, extract)
 	if err != nil {
 		return
 	}
 	return
+}
+
+func MainContent(s string) string {
+	type noded struct {
+		node       *html.Node
+		density    int
+		densitySum int
+	}
+
+	nodesmap := make(map[*html.Node]int)
+	node, err := html.Parse(strings.NewReader(s))
+	if err != nil {
+		log.Fatal(err)
+	}
+	var f func(*html.Node)
+	f = func(n *html.Node) {
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			if c.Type == html.ElementNode {
+				nodesmap[c] = calcChars(c).textDensity()
+			}
+			f(c)
+		}
+	}
+	f(node)
+
+	var fSum func(int, *html.Node) int
+	fSum = func(s int, node *html.Node) int {
+		var ff func(*html.Node)
+		sum := s
+		ff = func(n *html.Node) {
+			if n.Type == html.ElementNode {
+				sum += nodesmap[n]
+			}
+
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				ff(c)
+			}
+		}
+		ff(node)
+		return sum
+	}
+	nodes := make([]*noded, 0)
+	for n, d := range nodesmap {
+		node := &noded{}
+		node.density = d
+		node.node = n
+		node.densitySum = fSum(d, n)
+		nodes = append(nodes, node)
+
+	}
+
+	sort.Slice(nodes, func(i, j int) bool {
+		return nodes[i].densitySum > nodes[j].densitySum
+	})
+
+	var selected *noded
+	for i, n := range nodes {
+		if i > 6 {
+			break
+		}
+		//log.Println(n.node.Data, n.density, n.densitySum)
+		if n.node.Data == "html" {
+			continue
+		}
+		if n.node.Data == "body" {
+			continue
+		}
+		if selected == nil {
+			selected = n
+		}
+		if selected != nil && n.density >= selected.density {
+			selected = n
+		}
+	}
+	if selected != nil {
+		log.Println(selected.node.Data)
+		return renderNode(selected.node)
+	}
+	return ""
+}
+
+func renderNode(n *html.Node) string {
+	var buf bytes.Buffer
+	w := io.Writer(&buf)
+	html.Render(w, n)
+	return buf.String()
+}
+
+func calcChars(n *html.Node) *density {
+	txt := ""
+	tags := -1
+	linkchar := ""
+	linktag := 0
+	var f func(*html.Node, bool, bool)
+	f = func(n *html.Node, isText, isHyper bool) {
+
+		if n.Type == html.ElementNode {
+			if isHyper {
+				linktag++
+			} else {
+				tags++
+			}
+
+		}
+		if n.Type == html.TextNode {
+
+			if isHyper {
+				linkchar += strings.TrimSpace(n.Data)
+				txt += linkchar
+			} else {
+				if isText {
+					txt += strings.TrimSpace(n.Data)
+				}
+			}
+
+		}
+		isText = isText || (n.Type == html.ElementNode)
+		isHyper = isHyper || (n.Type == html.ElementNode && n.Data == "a")
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			f(c, isText, isHyper)
+		}
+	}
+
+	f(n, false, false)
+	txt = (txt)
+	linkchar = (linkchar)
+	d := &density{chars: len(txt), tags: tags, linkchar: len(linkchar), linktag: linktag, txt: txt}
+	return d
+}
+
+func (d *density) textDensity() int {
+	//text_density = (1.0 * char_num / tag_num) * qLn((1.0 * char_num * tag_num) / (1.0 * linkchar_num * linktag_num))
+	// / qLn(qLn(1.0 * char_num * linkchar_num / un_linkchar_num + ratio * char_num + qExp(1.0)));
+	//return 0
+
+	if d.chars == 0 {
+		return 0
+	}
+	unlinkcharnum := d.chars - d.linkchar
+	if d.tags <= 0 {
+		d.tags = 1
+	}
+	if d.linkchar <= 0 {
+		d.linkchar = 1
+	}
+	if d.linktag <= 0 {
+		d.linktag = 1
+	}
+	if unlinkcharnum <= 0 {
+		unlinkcharnum = 1
+	}
+	chisl := (float64(d.chars) / float64(d.tags)) * math.Log((float64(d.chars)*float64(d.tags))/(float64(d.linkchar)*float64(d.linktag)))
+	//qLn(qLn(1.0*char_num*linkchar_num/un_linkchar_num + ratio*char_num + qExp(1.0)))
+	znamen := math.Log( /*math.Log*/ (float64(d.chars)*float64(d.linkchar)/float64(unlinkcharnum) + 1.0*float64(d.chars) + math.Exp(1.0)))
+	return int(chisl / znamen)
 }

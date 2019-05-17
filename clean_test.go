@@ -8,6 +8,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func url2file(t *testing.T, u string) {
+	s, err := clean.URI(u, true)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, s)
+	ioutil.WriteFile("out.htm", []byte(s), 0666)
+}
+
 func Test0(t *testing.T) {
 	html := `
 	<!DOCTYPE html>
@@ -50,19 +57,11 @@ func Test0(t *testing.T) {
 </div>
 </body>
 </html>`
-	s, err := clean.Clean(html)
+	s, err := clean.Clean(html, true)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, s)
-	//log.Printf("\n%s", s)
 }
 
-func url2file(t *testing.T, u string) {
-	s, err := clean.URI(u)
-
-	assert.NoError(t, err)
-	assert.NotEmpty(t, s)
-	ioutil.WriteFile("out.htm", []byte(s), 0666)
-}
 func Test1(t *testing.T) {
 	url2file(t, "https://vc.ru/services/67441-baza-dannyh-turisticheskogo-servisa-sletat-ru-s-pasportnymi-dannymi-klientov-vremenno-okazalas-v-otkrytom-dostupe")
 

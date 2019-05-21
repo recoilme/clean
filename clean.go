@@ -33,9 +33,22 @@ type density struct {
 }
 
 // Preprocess some string
-func Preprocess(fragment string, pretty bool) (string, error) {
+func Preprocess(fragment string, pretty bool, base *url.URL) (string, error) {
 
 	var buf bytes.Buffer
+
+	fixURL := func(u string) string {
+		if base == nil {
+			return u
+		}
+		uNew, err := url.Parse(u)
+		if err == nil {
+			uNew.Fragment = ""
+			uNew.RawQuery = ""
+			return base.ResolveReference(uNew).String()
+		}
+		return u
+	}
 
 	t := html.NewTokenizer(strings.NewReader(fragment))
 	inTag := ""
@@ -58,9 +71,9 @@ func Preprocess(fragment string, pretty bool) (string, error) {
 						k, v, m := t.TagAttr()
 						if string(k) == "src" {
 							if pretty {
-								buf.WriteString(fmt.Sprintf("<img src=\"%s\"/><br/>", string(v)))
+								buf.WriteString(fmt.Sprintf("<img src=\"%s\"/><br/>", fixURL(string(v))))
 							} else {
-								buf.WriteString(fmt.Sprintf("<img src=\"%s\"/>", string(v)))
+								buf.WriteString(fmt.Sprintf("<img src=\"%s\"/>", fixURL(string(v))))
 							}
 						}
 						if !m {
@@ -87,7 +100,7 @@ func Preprocess(fragment string, pretty bool) (string, error) {
 							for {
 								k, v, m := t.TagAttr()
 								if string(k) == "href" {
-									buf.WriteString(fmt.Sprintf(" <a href=\"%s\"> ", string(v)))
+									buf.WriteString(fmt.Sprintf(" <a href=\"%s\"> ", fixURL(string(v))))
 								}
 								if !m {
 									break
@@ -100,9 +113,9 @@ func Preprocess(fragment string, pretty bool) (string, error) {
 								k, v, m := t.TagAttr()
 								if string(k) == "src" {
 									if pretty {
-										buf.WriteString(fmt.Sprintf("<p><img src=\"%s\"></p>", string(v)))
+										buf.WriteString(fmt.Sprintf("<p><img src=\"%s\"></p>", fixURL(string(v))))
 									} else {
-										buf.WriteString(fmt.Sprintf("<img src=\"%s\">", string(v)))
+										buf.WriteString(fmt.Sprintf("<img src=\"%s\">", fixURL(string(v))))
 									}
 								}
 								if !m {
@@ -169,8 +182,8 @@ func Preprocess(fragment string, pretty bool) (string, error) {
 }
 
 //Clean return cleaned html
-func Clean(s string, extract bool) (string, error) {
-	s, err := Preprocess(s, false)
+func Clean(s string, extract bool, baseURL *url.URL) (string, error) {
+	s, err := Preprocess(s, false, baseURL)
 	if err != nil {
 		return s, err
 	}
@@ -183,9 +196,10 @@ func Clean(s string, extract bool) (string, error) {
 		}
 	}
 	if extract {
+		//ss := MainContent(s)
 		s = MainContent(s)
 	}
-	return Preprocess(s, true)
+	return Preprocess(s, true, nil)
 }
 
 // TrimBytes remove spaces and /r/n
@@ -250,7 +264,11 @@ func URI(u string, extract bool) (s string, err error) {
 	if err != nil {
 		return
 	}
-	s, err = Clean(s, extract)
+	uNew, err := url.Parse(u)
+	if err != nil {
+		uNew = nil
+	}
+	s, err = Clean(s, extract, uNew)
 	if err != nil {
 		return
 	}
@@ -266,6 +284,7 @@ func MainContent(s string) string {
 
 	nodesmap := make(map[*html.Node]int)
 	node, err := html.Parse(strings.NewReader(s))
+	removeBad(node)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -312,7 +331,7 @@ func MainContent(s string) string {
 
 	var selected *noded
 	for i, n := range nodes {
-		if i > 6 {
+		if i > 9 {
 			break
 		}
 		//log.Println(n.node.Data, n.density, n.densitySum)
@@ -325,12 +344,14 @@ func MainContent(s string) string {
 		if selected == nil {
 			selected = n
 		}
-		if selected != nil && n.density >= selected.density {
+		//log.Println(selected.node.Data, n.density, n.densitySum, int(float32(selected.densitySum)*0.8))
+		if selected != nil && n.density >= int(float32(selected.density)*0.7) && n.densitySum >= int(float32(selected.densitySum)*0.7) {
 			selected = n
+			//log.Println("in")
 		}
 	}
 	if selected != nil {
-		log.Println(selected.node.Data)
+		//log.Println("selected", selected.node.Data, selected.density)
 		return renderNode(selected.node)
 	}
 	return ""
@@ -410,4 +431,44 @@ func (d *density) textDensity() int {
 	//qLn(qLn(1.0*char_num*linkchar_num/un_linkchar_num + ratio*char_num + qExp(1.0)))
 	znamen := math.Log( /*math.Log*/ (float64(d.chars)*float64(d.linkchar)/float64(unlinkcharnum) + 1.0*float64(d.chars) + math.Exp(1.0)))
 	return int(chisl / znamen)
+}
+
+func removeNode(n *html.Node, bad map[string]struct{}) bool {
+	var r bool
+	// if note is script tag
+	if n.Type == html.ElementNode {
+		atom := strings.ToLower(n.Data)
+		if _, ok := bad[atom]; ok {
+			n.Parent.RemoveChild(n)
+			return true
+		}
+	}
+	// traverse DOM
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		r = removeNode(c, bad)
+		if r {
+			break
+		}
+	}
+	return r
+}
+
+func removeBad(n *html.Node) {
+	bad := map[string]struct{}{
+		"style":    struct{}{},
+		"script":   struct{}{},
+		"svg":      struct{}{},
+		"nav":      struct{}{},
+		"aside":    struct{}{},
+		"form":     struct{}{},
+		"noscript": struct{}{},
+		"xmp":      struct{}{},
+		"textarea": struct{}{},
+		"air":      struct{}{},
+	}
+	for {
+		if !removeNode(n, bad) {
+			break
+		}
+	}
 }

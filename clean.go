@@ -123,7 +123,9 @@ func Preprocess(fragment string, pretty bool, base *url.URL) (string, error) {
 								}
 							}
 						}
-					default:
+					case "span":
+						buf.WriteByte(' ')
+					case "div":
 						if tag.String() == "div" && pretty {
 							if divCnt < 0 {
 								divCnt = 0
@@ -131,6 +133,9 @@ func Preprocess(fragment string, pretty bool, base *url.URL) (string, error) {
 							buf.WriteString(fmt.Sprintf("\n%s", strings.Repeat(" ", divCnt)))
 							divCnt++
 						}
+						buf.WriteString(fmt.Sprintf("<%s>", tag.String()))
+					default:
+
 						if tag.String() == "nav" && pretty {
 							buf.WriteString(fmt.Sprintf("<details><summary>Navigation</summary><%s>", tag.String()))
 						}
@@ -169,6 +174,8 @@ func Preprocess(fragment string, pretty bool, base *url.URL) (string, error) {
 							buf.WriteString(fmt.Sprintf("\n%s", strings.Repeat(" ", divCnt)))
 						}
 						buf.WriteString(fmt.Sprintf("</%s>", tag.String()))
+					case "span":
+						buf.WriteByte(' ')
 					default:
 						if tag.String() == "nav" && pretty {
 							buf.WriteString(fmt.Sprintf("</%s></details>", tag.String()))
@@ -278,11 +285,12 @@ func URI(u string, extract bool) (s string, err error) {
 func MainContent(s string) string {
 	type noded struct {
 		node       *html.Node
-		density    int
+		density    *density
 		densitySum int
+		nodeSum    int
 	}
 
-	nodesmap := make(map[*html.Node]int)
+	nodesmap := make(map[*html.Node]*density)
 	node, err := html.Parse(strings.NewReader(s))
 	removeBad(node)
 	if err != nil {
@@ -292,20 +300,28 @@ func MainContent(s string) string {
 	f = func(n *html.Node) {
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			if c.Type == html.ElementNode {
-				nodesmap[c] = calcChars(c).textDensity()
+				den := calcChars(c)
+
+				//log.Println(c.Data, den, den.textDensity())
+				nodesmap[c] = den //den.textDensity()
 			}
 			f(c)
 		}
 	}
 	f(node)
 
-	var fSum func(int, *html.Node) int
-	fSum = func(s int, node *html.Node) int {
+	var fSum func(*density, *html.Node) *density
+	fSum = func(s *density, node *html.Node) *density {
 		var ff func(*html.Node)
 		sum := s
 		ff = func(n *html.Node) {
 			if n.Type == html.ElementNode {
-				sum += nodesmap[n]
+				d := nodesmap[n]
+				sum.chars += d.chars
+				sum.linkchar += d.linkchar
+				sum.linktag += d.linktag
+				sum.tags += d.tags
+
 			}
 
 			for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -316,13 +332,37 @@ func MainContent(s string) string {
 		return sum
 	}
 	nodes := make([]*noded, 0)
+	nodesmapsum := make(map[*html.Node]int)
 	for n, d := range nodesmap {
+		den := fSum(d, n)
+		densum := den.textDensity()
 		node := &noded{}
-		node.density = d
+		node.density = den
+		node.nodeSum = densum
 		node.node = n
-		node.densitySum = fSum(d, n)
+		node.densitySum = 0
 		nodes = append(nodes, node)
+		nodesmapsum[n] = densum
+	}
 
+	var fSumDen func(int, *html.Node) int
+	fSumDen = func(s int, node *html.Node) int {
+		var fff func(*html.Node)
+		sum := s
+		fff = func(n *html.Node) {
+			if n.Type == html.ElementNode {
+				sum += nodesmapsum[n]
+			}
+
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				fff(c)
+			}
+		}
+		fff(node)
+		return sum
+	}
+	for _, d := range nodes {
+		d.densitySum = fSumDen(d.nodeSum, d.node)
 	}
 
 	sort.Slice(nodes, func(i, j int) bool {
@@ -330,28 +370,44 @@ func MainContent(s string) string {
 	})
 
 	var selected *noded
+	min := int(math.Min(9., float64(len(nodes))/50.))
+	if min < 5 {
+		min = int(math.Min(float64(len(nodes)), 5.))
+	}
+	min = 2
+	var tr, trb float64 //,trb,tr
 	for i, n := range nodes {
-		if i > 9 {
+		if i > min {
 			break
 		}
-		//log.Println(n.node.Data, n.density, n.densitySum)
+
 		if n.node.Data == "html" {
 			continue
 		}
 		if n.node.Data == "body" {
+			trb = float64(n.densitySum)
 			continue
 		}
 		if selected == nil {
+			tr = float64(n.densitySum) / trb
+			if tr > 0.8 {
+				tr = 0.8
+			} else {
+				tr = 0.2
+			}
+
 			selected = n
 		}
-		//log.Println(selected.node.Data, n.density, n.densitySum, int(float32(selected.densitySum)*0.8))
-		if selected != nil && n.density >= int(float32(selected.density)*0.7) && n.densitySum >= int(float32(selected.densitySum)*0.7) {
+		cnt := float64(n.densitySum) / float64(selected.densitySum)
+		log.Println(i, n.node.Data, n.densitySum, n.nodeSum, cnt, tr) //, n.density)
+
+		//log.Println("--", float64(n.densitySum)/float64(selected.densitySum) > 0.8, selected.nodeSum <= n.nodeSum, selected.nodeSum, n.nodeSum)
+		if n.nodeSum >= int(float64(selected.nodeSum)*tr) && cnt >= tr && n.node.Data != "ul" { //&& ((float64(n.densitySum) / float64(selected.densitySum)) >= 0.7) {
 			selected = n
-			//log.Println("in")
 		}
 	}
 	if selected != nil {
-		//log.Println("selected", selected.node.Data, selected.density)
+		log.Println("selected", selected.node.Data, selected.densitySum) //, selected.density)
 		return renderNode(selected.node)
 	}
 	return ""
@@ -381,19 +437,24 @@ func calcChars(n *html.Node) *density {
 
 		}
 		if n.Type == html.TextNode {
-
 			if isHyper {
 				linkchar += strings.TrimSpace(n.Data)
-				txt += linkchar
+				//txt += linkchar
 			} else {
-				if isText {
-					txt += strings.TrimSpace(n.Data)
-				}
+				//if isText {
+				txt += strings.TrimSpace(n.Data)
+				//log.Println("isText:", txt)
+				//}
 			}
-
 		}
-		isText = isText || (n.Type == html.ElementNode)
-		isHyper = isHyper || (n.Type == html.ElementNode && n.Data == "a")
+		//isText = isText || (n.Type == html.ElementNode)
+		if n.Type == html.ElementNode {
+			isHyper = false
+			if n.Data == "a" {
+				isHyper = true
+			}
+		}
+		//isHyper = isHyper || (n.Type == html.ElementNode && n.Data == "a")
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			f(c, isText, isHyper)
 		}
@@ -402,7 +463,8 @@ func calcChars(n *html.Node) *density {
 	f(n, false, false)
 	txt = (txt)
 	linkchar = (linkchar)
-	d := &density{chars: len(txt), tags: tags, linkchar: len(linkchar), linktag: linktag, txt: txt}
+	d := &density{chars: len([]rune(txt)), tags: tags, linkchar: len([]rune(linkchar)), linktag: linktag, txt: txt}
+
 	return d
 }
 
@@ -410,7 +472,7 @@ func (d *density) textDensity() int {
 	//text_density = (1.0 * char_num / tag_num) * qLn((1.0 * char_num * tag_num) / (1.0 * linkchar_num * linktag_num))
 	// / qLn(qLn(1.0 * char_num * linkchar_num / un_linkchar_num + ratio * char_num + qExp(1.0)));
 	//return 0
-
+	d.chars = d.chars + d.linkchar
 	if d.chars == 0 {
 		return 0
 	}
@@ -429,7 +491,7 @@ func (d *density) textDensity() int {
 	}
 	chisl := (float64(d.chars) / float64(d.tags)) * math.Log((float64(d.chars)*float64(d.tags))/(float64(d.linkchar)*float64(d.linktag)))
 	//qLn(qLn(1.0*char_num*linkchar_num/un_linkchar_num + ratio*char_num + qExp(1.0)))
-	znamen := math.Log( /*math.Log*/ (float64(d.chars)*float64(d.linkchar)/float64(unlinkcharnum) + 1.0*float64(d.chars) + math.Exp(1.0)))
+	znamen := math.Log(math.Log(float64(d.chars)*float64(d.linkchar)/float64(unlinkcharnum) + 1.0*float64(d.chars) + math.Exp(1.0)))
 	return int(chisl / znamen)
 }
 

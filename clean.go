@@ -10,11 +10,11 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/PuerkitoBio/goquery"
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
 	"golang.org/x/net/html/charset"
@@ -194,19 +194,56 @@ func Clean(s string, extract bool, baseURL *url.URL) (string, error) {
 	if err != nil {
 		return s, err
 	}
-	re := regexp.MustCompile("<\\w*>\\s*\\^*\\$*</\\w*>")
+	ioutil.WriteFile("in.htm", []byte(s), 0666)
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(s))
+	sel := doc.Find("body")
+
+	iter := 0
+	maxsel := sel
+	maxden := 0
 	for {
-		before := s
-		s = re.ReplaceAllString(s, "")
-		if before == s {
+		maxsel = maxsel.Children()
+		iter++
+		if iter > 12 {
 			break
 		}
+		max := 0
+		for _, n := range maxsel.Nodes {
+			d := NodeDencity(n)
+			if iter >= 12 {
+				log.Println(n.Data, d)
+			}
+			if d >= max && d > maxden {
+				//	log.Println("max")
+				max = d
+				maxsel = doc.FindNodes(n)
+			}
+		}
+		if maxden == 0 {
+			maxden = int(float32(max) * 0.4)
+		}
+		if max == 0 {
+			//maxsel = maxsel.Parent()
+			//break
+		}
+		log.Println(iter, max, maxsel, maxsel.Nodes[0].Data)
 	}
-	if extract {
-		//ss := MainContent(s)
-		s = MainContent(s)
-	}
-	return Preprocess(s, true, nil)
+	res, _ := maxsel.Html()
+	/*
+		re := regexp.MustCompile("<\\w*>\\s*\\^*\\$*</\\w*>")
+		for {
+			before := s
+			s = re.ReplaceAllString(s, "")
+			if before == s {
+				break
+			}
+		}
+		if extract {
+			//ss := MainContent(s)
+			s = MainContent(s)
+		}
+	*/
+	return Preprocess(res, false, nil)
 }
 
 // TrimBytes remove spaces and /r/n
@@ -335,7 +372,7 @@ func MainContent(s string) string {
 	nodesmapsum := make(map[*html.Node]int)
 	for n, d := range nodesmap {
 		den := fSum(d, n)
-		densum := den.textDensity()
+		densum := den.TextDensity()
 		node := &noded{}
 		node.density = den
 		node.nodeSum = densum
@@ -374,7 +411,7 @@ func MainContent(s string) string {
 	if min < 5 {
 		min = int(math.Min(float64(len(nodes)), 5.))
 	}
-	min = 2
+	min = 3
 	var tr, trb float64 //,trb,tr
 	for i, n := range nodes {
 		if i > min {
@@ -468,7 +505,7 @@ func calcChars(n *html.Node) *density {
 	return d
 }
 
-func (d *density) textDensity() int {
+func (d *density) TextDensity() int {
 	//text_density = (1.0 * char_num / tag_num) * qLn((1.0 * char_num * tag_num) / (1.0 * linkchar_num * linktag_num))
 	// / qLn(qLn(1.0 * char_num * linkchar_num / un_linkchar_num + ratio * char_num + qExp(1.0)));
 	//return 0
@@ -489,6 +526,7 @@ func (d *density) textDensity() int {
 	if unlinkcharnum <= 0 {
 		unlinkcharnum = 1
 	}
+	d.tags = 1
 	chisl := (float64(d.chars) / float64(d.tags)) * math.Log((float64(d.chars)*float64(d.tags))/(float64(d.linkchar)*float64(d.linktag)))
 	//qLn(qLn(1.0*char_num*linkchar_num/un_linkchar_num + ratio*char_num + qExp(1.0)))
 	znamen := math.Log(math.Log(float64(d.chars)*float64(d.linkchar)/float64(unlinkcharnum) + 1.0*float64(d.chars) + math.Exp(1.0)))
@@ -533,4 +571,40 @@ func removeBad(n *html.Node) {
 			break
 		}
 	}
+}
+
+func NodeDencity(node *html.Node) int {
+	nodesmap := make(map[*html.Node]*density)
+	var f func(*html.Node)
+	//rootTxt := ""
+	f = func(n *html.Node) {
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			if c.Type == html.ElementNode {
+				den := calcChars(c)
+				s := den.TextDensity()
+				if s > 7000 {
+					log.Println(den.TextDensity(), den.chars, den.linkchar, den.linktag, c.Data)
+				}
+				nodesmap[c] = den
+			}
+			if c.Type == html.TextNode {
+				//log.Println(c.Data)
+				//rootTxt += strings.TrimSpace(c.Data)
+			}
+			f(c)
+		}
+	}
+	f(node)
+	//rootDen := &density{}
+	//rootDen.chars = len([]rune(rootTxt))
+	//log.Println(string(rootTxt))
+	//nodesmap[node] = rootDen
+	max := 0
+	for _, d := range nodesmap {
+		curr := d.TextDensity()
+		if curr > max {
+			max = curr
+		}
+	}
+	return max
 }

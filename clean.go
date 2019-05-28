@@ -32,6 +32,11 @@ type density struct {
 	txt      string
 }
 
+type stat struct {
+	txt float64
+	lin float64
+}
+
 // Preprocess some string
 func Preprocess(fragment string, pretty bool, base *url.URL) (string, error) {
 
@@ -125,6 +130,10 @@ func Preprocess(fragment string, pretty bool, base *url.URL) (string, error) {
 						}
 					case "span":
 						buf.WriteByte(' ')
+					case "p":
+						buf.WriteString(fmt.Sprintf(" <%s>", tag.String()))
+					case "em":
+						buf.WriteString(fmt.Sprintf(" <%s>", tag.String()))
 					case "div":
 						if tag.String() == "div" && pretty {
 							if divCnt < 0 {
@@ -176,6 +185,10 @@ func Preprocess(fragment string, pretty bool, base *url.URL) (string, error) {
 						buf.WriteString(fmt.Sprintf("</%s>", tag.String()))
 					case "span":
 						buf.WriteByte(' ')
+					case "p":
+						buf.WriteString(fmt.Sprintf(" </%s>", tag.String()))
+					case "em":
+						buf.WriteString(fmt.Sprintf(" </%s>", tag.String()))
 					default:
 						if tag.String() == "nav" && pretty {
 							buf.WriteString(fmt.Sprintf("</%s></details>", tag.String()))
@@ -195,55 +208,104 @@ func Clean(s string, extract bool, baseURL *url.URL) (string, error) {
 		return s, err
 	}
 	ioutil.WriteFile("in.htm", []byte(s), 0666)
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(s))
-	sel := doc.Find("body")
 
-	iter := 0
-	maxsel := sel
-	maxden := 0
+	n := MainNode(s)
+	res := ""
+	if n != nil {
+		res = renderNode(n)
+	}
+
+	//ioutil.WriteFile("out.htm", []byte(res), 0666)
+
+	return Preprocess(res, true, baseURL)
+}
+
+func MainNode(s string) *html.Node {
+
+	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(s))
+
+	maxsel := doc.Find("body")
+	txt, _ := NodeDen(doc, maxsel, 0.3)
+	pageText := txt
+	log.Println("pageText", pageText)
+
+	max := -1.
+	ld := 0.
+	td := 0.
+	var maxNode *html.Node
+	var d func(*goquery.Selection)
+	d = func(s *goquery.Selection) {
+		nodes := s.Nodes
+		if len(nodes) == 0 {
+			return
+		}
+
+		for _, n := range nodes {
+			nodesel := doc.FindNodes(n)
+			txt, link := NodeDen(doc, nodesel, 0.3)
+			score := 0.
+			if txt != 0 && pageText != 0 {
+				score = 0.8*((txt-link)/txt) + 0.2*(txt/pageText)
+			}
+
+			if score > max && (txt/pageText) > 0.2 {
+
+				max = score
+				maxNode = n
+				ld = (txt - link) / txt
+				td = txt / pageText
+				log.Println(maxNode.Data, max, txt, link, (txt-link)/txt, (txt / pageText), link)
+			}
+			//log.Println(n.Data, txt, link, score)
+		}
+		s = s.Children()
+		d(s)
+	}
+	d(maxsel.Children())
+
+	log.Println("----")
+	if maxNode == nil {
+		return maxNode
+	}
+	maxsel = doc.FindNodes(maxNode)
+	var maxNode2 *html.Node
+	ld2 := 0.
+	td2 := 0.
 	for {
 		maxsel = maxsel.Children()
-		iter++
-		if iter > 12 {
+		max2 := -1.
+		for i, n := range maxsel.Nodes {
+			_ = i
+			nodesel := doc.FindNodes(n)
+			txt, link := NodeDen(doc, nodesel, 0.3)
+			score := 0.
+			if txt != 0 && pageText != 0 {
+				score = 0.8*((txt-link)/txt) + 0.2*(txt/pageText)
+			}
+			if score > max2 && (txt/pageText) > 0.2 {
+				max2 = score
+				ld2 = (txt - link) / txt
+				td2 = txt / pageText
+
+				maxsel = nodesel
+				maxNode2 = n
+				log.Println(n.Data, score, txt, link, (txt-link)/txt, (txt / pageText), link)
+			}
+
+		}
+		if max2 < max*.8 || ld2 < ld*.8 || td2 < td*.64 {
 			break
+		} else {
+			log.Println("newnode")
+			ld = ld2
+			td = td2
+			max = max2
+			maxNode = maxNode2
 		}
-		max := 0
-		for _, n := range maxsel.Nodes {
-			d := NodeDencity(n)
-			if iter >= 12 {
-				log.Println(n.Data, d)
-			}
-			if d >= max && d > maxden {
-				//	log.Println("max")
-				max = d
-				maxsel = doc.FindNodes(n)
-			}
-		}
-		if maxden == 0 {
-			maxden = int(float32(max) * 0.4)
-		}
-		if max == 0 {
-			//maxsel = maxsel.Parent()
-			//break
-		}
-		log.Println(iter, max, maxsel, maxsel.Nodes[0].Data)
 	}
-	res, _ := maxsel.Html()
-	/*
-		re := regexp.MustCompile("<\\w*>\\s*\\^*\\$*</\\w*>")
-		for {
-			before := s
-			s = re.ReplaceAllString(s, "")
-			if before == s {
-				break
-			}
-		}
-		if extract {
-			//ss := MainContent(s)
-			s = MainContent(s)
-		}
-	*/
-	return Preprocess(res, false, nil)
+
+	return maxNode
+
 }
 
 // TrimBytes remove spaces and /r/n
@@ -337,7 +399,7 @@ func MainContent(s string) string {
 	f = func(n *html.Node) {
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			if c.Type == html.ElementNode {
-				den := calcChars(c)
+				den, _ := calcChars(renderNode(c))
 
 				//log.Println(c.Data, den, den.textDensity())
 				nodesmap[c] = den //den.textDensity()
@@ -457,7 +519,58 @@ func renderNode(n *html.Node) string {
 	return buf.String()
 }
 
-func calcChars(n *html.Node) *density {
+func calcChars(fragment string) (d *density, err error) {
+	d = &density{}
+	inLink := 0
+	inCode := 0
+	t := html.NewTokenizer(strings.NewReader(fragment))
+	for {
+		switch tok := t.Next(); tok {
+		case html.ErrorToken:
+			if t.Err() == io.EOF {
+				return d, nil
+			}
+			return d, t.Err()
+
+		case html.StartTagToken:
+			tagName, _ := t.TagName()
+			if tag := atom.Lookup(tagName); tag != 0 {
+				switch tag.String() {
+				case "a":
+					inLink++
+					d.linktag++
+				case "code":
+					inCode++
+				default:
+					d.tags++
+				}
+			}
+
+		case html.TextToken:
+			if inCode > 0 {
+				continue
+			}
+			if inLink > 0 {
+				d.linkchar += len(t.Raw())
+			} else {
+				d.chars += len(t.Raw())
+			}
+
+		case html.EndTagToken:
+			tagName, _ := t.TagName()
+			if tag := atom.Lookup(tagName); tag != 0 {
+				switch tag.String() {
+				case "a":
+					inLink--
+				case "code":
+					inCode--
+				}
+			}
+		}
+	}
+}
+
+func calcChars2(n *html.Node) *density {
 	txt := ""
 	tags := -1
 	linkchar := ""
@@ -488,6 +601,7 @@ func calcChars(n *html.Node) *density {
 		if n.Type == html.ElementNode {
 			isHyper = false
 			if n.Data == "a" {
+
 				isHyper = true
 			}
 		}
@@ -500,7 +614,7 @@ func calcChars(n *html.Node) *density {
 	f(n, false, false)
 	txt = (txt)
 	linkchar = (linkchar)
-	d := &density{chars: len([]rune(txt)), tags: tags, linkchar: len([]rune(linkchar)), linktag: linktag, txt: txt}
+	d := &density{chars: len([]rune(txt)), tags: tags + linktag, linkchar: linktag * 10, linktag: linktag, txt: txt}
 
 	return d
 }
@@ -526,7 +640,7 @@ func (d *density) TextDensity() int {
 	if unlinkcharnum <= 0 {
 		unlinkcharnum = 1
 	}
-	d.tags = 1
+
 	chisl := (float64(d.chars) / float64(d.tags)) * math.Log((float64(d.chars)*float64(d.tags))/(float64(d.linkchar)*float64(d.linktag)))
 	//qLn(qLn(1.0*char_num*linkchar_num/un_linkchar_num + ratio*char_num + qExp(1.0)))
 	znamen := math.Log(math.Log(float64(d.chars)*float64(d.linkchar)/float64(unlinkcharnum) + 1.0*float64(d.chars) + math.Exp(1.0)))
@@ -580,10 +694,11 @@ func NodeDencity(node *html.Node) int {
 	f = func(n *html.Node) {
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			if c.Type == html.ElementNode {
-				den := calcChars(c)
+				den, _ := calcChars(renderNode(c))
 				s := den.TextDensity()
-				if s > 7000 {
-					log.Println(den.TextDensity(), den.chars, den.linkchar, den.linktag, c.Data)
+				if s > 50 {
+					log.Println(den.TextDensity(), den.chars, den.linkchar, den.linktag, den.tags, c.Data)
+					//log.Println(renderNode(c))
 				}
 				nodesmap[c] = den
 			}
@@ -607,4 +722,57 @@ func NodeDencity(node *html.Node) int {
 		}
 	}
 	return max
+}
+
+func NodeDen(doc *goquery.Document, s *goquery.Selection, threshold float64) (float64, float64) {
+	tr := strings.TrimSpace(s.Text())
+	txtCntN := float64(len([]rune(tr)))
+	linkText := ""
+	s.Find("a").Each(func(n int, s *goquery.Selection) {
+		linkText += strings.TrimSpace(s.Text())
+	})
+	linksCntN := float64(len([]rune(linkText)))
+	return txtCntN, linksCntN
+	/*
+		var d func(*goquery.Selection)
+
+		textCnt := 0.
+		linkCnt := 0.
+		d = func(s *goquery.Selection) {
+			nodes := s.Nodes
+			if len(nodes) == 0 {
+				return
+			}
+
+			for _, n := range nodes {
+				nodesel := doc.FindNodes(n)
+				tr := strings.TrimSpace(nodesel.Text())
+				txtCntN := float64(len([]rune(tr)))
+				linkText := ""
+				nodesel.Find("a").Each(func(n int, s *goquery.Selection) {
+					linkText += strings.TrimSpace(s.Text())
+				})
+				if n.Data == "a" {
+					linkText += strings.TrimSpace(nodesel.Text())
+				}
+				linksCntN := float64(len([]rune(linkText)))
+				childRatio := 0.
+				if txtCntN != 0 {
+					childRatio = (txtCntN - linksCntN) / (txtCntN)
+				}
+				log.Println(n.Data, "linkText", linkText, "tr", tr, txtCntN)
+				if childRatio >= threshold {
+					textCnt += txtCntN
+					linkCnt += linksCntN
+				}
+
+			}
+			s = s.Children()
+			d(s)
+		}
+		d(s)
+		//	log.Println("-------------------------")
+
+		return textCnt, linkCnt
+	*/
 }

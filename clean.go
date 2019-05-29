@@ -207,7 +207,7 @@ func Clean(s string, extract bool, baseURL *url.URL) (string, error) {
 	}
 	ioutil.WriteFile("in.htm", []byte(s), 0666)
 
-	n := MainNode(s)
+	n := MainNode(s, baseURL.Hostname())
 	res := ""
 	if n != nil {
 		res = renderNode(n)
@@ -218,19 +218,22 @@ func Clean(s string, extract bool, baseURL *url.URL) (string, error) {
 	return Preprocess(res, true, baseURL)
 }
 
-func MainNode(s string) *html.Node {
+func MainNode(s, host string) *html.Node {
+	var maxNode *html.Node
 
 	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(s))
 
 	maxsel := doc.Find("body")
-	txt, _ := NodeDen(doc, maxsel, 0.3)
-	pageText := txt
-	log.Println("pageText", pageText)
+	txt, link, linkint := NodeDen2(doc, maxsel, host)
+	pageText := txt - link
+	pageLink := link
+	pageInternalLink := linkint
+
+	log.Println(txt, link, pageInternalLink)
 
 	max := -1.
-	ld := 0.
-	td := 0.
-	var maxNode *html.Node
+	//var mainNode *goquery.Selection
+	iter := 0
 	var d func(*goquery.Selection)
 	d = func(s *goquery.Selection) {
 		nodes := s.Nodes
@@ -240,68 +243,140 @@ func MainNode(s string) *html.Node {
 
 		for _, n := range nodes {
 			nodesel := doc.FindNodes(n)
-			txt, link := NodeDen(doc, nodesel, 0.3)
-			score := 0.
-			if txt != 0 && pageText != 0 {
-				score = 0.8*((txt-link)/txt) + 0.2*(txt/pageText)
+			txt, link, intern := NodeDen2(doc, nodesel, host)
+
+			score1 := 0.
+			if pageText > 100 {
+				score1 = ((txt - link) / pageText)
 			}
-
-			if score > max && (txt/pageText) > 0.2 {
-
-				max = score
+			score2 := 0.
+			if pageLink > 100 {
+				//	score2 = (1 - link/pageLink)
+			}
+			score3 := 0.
+			if pageInternalLink > 10 {
+				score3 = float64(1 - intern/pageInternalLink)
+			}
+			scoreElem := 0.
+			if n.Data == "div" {
+				scoreElem = .2
+			}
+			if n.Data == "main" {
+				//log.Println(n.Data, max, score1, score2, score3, scoreElem, intern)
+				scoreElem = .2
+			}
+			if n.Data == "article" {
+				scoreElem = .2
+			}
+			if score1 > .05 && ((score1 + score2 + score3 + scoreElem) > max) {
+				max = score1 + score2 + score3 + scoreElem
+				//	mainNode = nodesel
 				maxNode = n
-				ld = (txt - link) / txt
-				td = txt / pageText
-				log.Println(maxNode.Data, max, txt, link, (txt-link)/txt, (txt / pageText), link)
+				log.Println(n.Data, max, score1, score2, score3, scoreElem, intern)
+
+				if iter == 1111 {
+					return
+				}
+				iter++
 			}
-			//log.Println(n.Data, txt, link, score)
+			_ = score3
+
 		}
+		//return
+
 		s = s.Children()
+
 		d(s)
 	}
 	d(maxsel.Children())
 
-	log.Println("----")
-	if maxNode == nil {
-		return maxNode
-	}
-	maxsel = doc.FindNodes(maxNode)
-	var maxNode2 *html.Node
-	ld2 := 0.
-	td2 := 0.
-	for {
-		maxsel = maxsel.Children()
-		max2 := -1.
-		for i, n := range maxsel.Nodes {
-			_ = i
-			nodesel := doc.FindNodes(n)
-			txt, link := NodeDen(doc, nodesel, 0.3)
-			score := 0.
-			if txt != 0 && pageText != 0 {
-				score = 0.8*((txt-link)/txt) + 0.2*(txt/pageText)
-			}
-			if score > max2 && (txt/pageText) > 0.2 {
-				max2 = score
-				ld2 = (txt - link) / txt
-				td2 = txt / pageText
+	/*
+		doc, _ := goquery.NewDocumentFromReader(strings.NewReader(s))
 
-				maxsel = nodesel
-				maxNode2 = n
-				log.Println(n.Data, score, txt, link, (txt-link)/txt, (txt / pageText), link)
+		maxsel := doc.Find("body")
+		txt, _ := NodeDen(doc, maxsel, 0.3)
+		pageText := txt
+		log.Println("pageText", pageText)
+
+		max := -1.
+		ld := 0.
+		td := 0.
+		var maxNode *html.Node
+		var d func(*goquery.Selection)
+		d = func(s *goquery.Selection) {
+			nodes := s.Nodes
+			if len(nodes) == 0 {
+				return
 			}
 
-		}
-		if max2 < max*.8 || ld2 < ld*.8 || td2 < td*.64 {
-			break
-		} else {
-			log.Println("newnode")
-			ld = ld2
-			td = td2
-			max = max2
-			maxNode = maxNode2
-		}
-	}
+			for _, n := range nodes {
+				nodesel := doc.FindNodes(n)
+				txt, link := NodeDen(doc, nodesel, 0.3)
+				score := 0.
+				if txt != 0 && pageText != 0 {
+					score = 0.8*(1-((txt-link)/txt)) + 0.2*(txt/pageText)
+				}
 
+				if score > max && (txt/pageText) > 0.2 {
+
+					max = score
+					maxNode = n
+					ld = (txt - link) / txt
+					td = txt / pageText
+					log.Println(maxNode.Data, max, txt, link, (txt-link)/txt, (txt / pageText), link)
+				}
+				//log.Println(n.Data, txt, link, score)
+			}
+			s = s.Children()
+			d(s)
+		}
+		d(maxsel.Children())
+
+		log.Println("----")
+		_ = ld
+		_ = td
+	*/
+	/*
+		if maxNode == nil {
+			return maxNode
+		}
+		maxsel = doc.FindNodes(maxNode)
+		var maxNode2 *html.Node
+		ld2 := 0.
+		td2 := 0.
+		for {
+			maxsel = maxsel.Children()
+			max2 := -1.
+			for i, n := range maxsel.Nodes {
+				_ = i
+				nodesel := doc.FindNodes(n)
+				txt, link := NodeDen(doc, nodesel, 0.3)
+				score := 0.
+				if txt != 0 && pageText != 0 {
+					score = 0.8*((txt-link)/txt) + 0.2*(txt/pageText)
+				}
+				if score > max2 && (txt/pageText) > 0.2 {
+					max2 = score
+					ld2 = (txt - link) / txt
+					td2 = txt / pageText
+
+					maxsel = nodesel
+					maxNode2 = n
+					log.Println(n.Data, score, txt, link, (txt-link)/txt, (txt / pageText), link)
+				}
+
+			}
+			if max2 < max*1.0 || ld2 < ld*.8 || td2 < td*.64 {
+				break
+			} else {
+				log.Println("newnode")
+				ld = ld2
+				td = td2
+				max = max2
+				maxNode = maxNode2
+			}
+		}
+	*/
 	return maxNode
 
 }
@@ -393,7 +468,30 @@ func NodeDen(doc *goquery.Document, s *goquery.Selection, threshold float64) (fl
 	s.Find("a").Each(func(n int, s *goquery.Selection) {
 		linkText += strings.TrimSpace(s.Text())
 	})
+	//log.Println("\n", linkText)
 	linksCntN := float64(len([]rune(linkText)))
 	return txtCntN, linksCntN
+
+}
+
+func NodeDen2(doc *goquery.Document, s *goquery.Selection, host string) (float64, float64, float64) {
+	tr := strings.TrimSpace(s.Text())
+	txtCntN := float64(len([]rune(tr)))
+	linkText := ""
+	s.Find("a").Each(func(n int, s *goquery.Selection) {
+		linkText += strings.TrimSpace(s.Text())
+	})
+
+	//log.Println("\n", linkText)
+	linksCntN := float64(len([]rune(linkText)))
+	pageInternalLink := 0.
+	s.Find("a").Each(func(n int, s *goquery.Selection) {
+		if href, ok := s.Attr("href"); ok {
+			if strings.Contains(href, host) {
+				pageInternalLink++
+			}
+		}
+	})
+	return txtCntN, linksCntN, pageInternalLink
 
 }

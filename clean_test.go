@@ -1,10 +1,14 @@
 package clean_test
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"strings"
 	"testing"
+
+	"github.com/dyatlov/go-readability"
+	rr "github.com/ying32/readability"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/recoilme/clean"
@@ -115,14 +119,16 @@ func Test26(t *testing.T) {
 }
 
 func Test29(t *testing.T) {
-
-	s := `<html><body> <strong><div>note:</div></strong> <p> a pargraph<a href='http://ya.ru'>with a link</a>in it. </p><ul><li>some <em>emphatic words</em> here.</li><li>more words.</li></ul></body></html>`
+	//s, _ := clean.GetUtf8("https://roem.ru/19-05-2019/277784/huawei-tykva/")
+	s, _ := clean.GetUtf8("https://www.adme.ru/svoboda-narodnoe-tvorchestvo/25-muzhchin-kotorye-nashli-sposob-sdelat-otcovstvo-chutochku-legche-2084015/")
+	//s := `<html><body> <strong><div>note:</div></strong> <p> a pargraph<a href='http://ya.ru'>with a link</a>in it. </p><ul><li>some <em>emphatic words</em> here.</li><li>more words.</li></ul></body></html>`
 	s, _ = clean.Preprocess(s, true, nil)
 	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(s))
+
 	maxsel := doc.Find("body")
-	txt, link := clean.NodeDen(doc, maxsel, 0.3)
-	pageText := txt
-	log.Println(txt, link)
+	txt, link, pageLi := clean.NodeDen2(doc, maxsel, "")
+	pageText := txt - link
+	pageLink := link
 
 	max := -1.
 	var mainNode *goquery.Selection
@@ -135,21 +141,41 @@ func Test29(t *testing.T) {
 
 		for _, n := range nodes {
 			nodesel := doc.FindNodes(n)
-			txt, link := clean.NodeDen(doc, nodesel, 0.3)
-			score := 0.
-			if txt != 0 && pageText != 0 {
-				score = 0.9*((txt-link)/txt) + 0.1*(txt/pageText)
-			}
+			txt, link, licnt := clean.NodeDen2(doc, nodesel, "")
 
-			if score > max {
-				max = score
+			score1 := ((txt - link) / pageText)
+			score2 := (1 - link/pageLink)
+			score3 := (1 - licnt/pageLi)
+			if score1 > .1 && ((score2 + score3) > max) {
+				max = score2 + score3
 				mainNode = nodesel
+				log.Println(n.Data, max)
 			}
-			log.Println(n.Data, txt, link, score)
+			_ = score3
+
 		}
+		//return
 		s = s.Children()
+
 		d(s)
 	}
 	d(maxsel.Children())
+	_ = mainNode
 	log.Println(mainNode.Text())
+}
+
+func Test30(t *testing.T) {
+	s, _ := clean.GetUtf8("https://roem.ru/19-05-2019/277784/huawei-tykva/")
+	s, _ = clean.Preprocess(s, true, nil)
+	d, _ := readability.NewDocument(s)
+	d.RemoveUnlikelyCandidates = false
+	//log.Println(d.Content())
+	test, err := rr.NewReadability("https://www.adme.ru/svoboda-narodnoe-tvorchestvo/25-muzhchin-kotorye-nashli-sposob-sdelat-otcovstvo-chutochku-legche-2084015/")
+	if err != nil {
+		fmt.Println("failed.", err)
+		return
+	}
+	test.Parse()
+	fmt.Println(test.Title)
+	fmt.Println(test.Content)
 }

@@ -30,32 +30,16 @@ func Test02(t *testing.T) {
 	url2file(t, "https://stackoverflow.com/questions/15081119/any-way-to-use-html-parse-without-it-adding-nodes-to-make-a-well-formed-tree")
 }
 
-func Test03(t *testing.T) {
-	url2file(t, "adme.ru")
-}
-
 func Test04(t *testing.T) {
 	url2file(t, "https://www.adme.ru/svoboda-narodnoe-tvorchestvo/25-muzhchin-kotorye-nashli-sposob-sdelat-otcovstvo-chutochku-legche-2084015/")
-}
-
-func Test05(t *testing.T) {
-	url2file(t, "https://t.me/s/recoilmeblog/245")
 }
 
 func Test06(t *testing.T) {
 	url2file(t, "https://vc.ru/contest/67338-kpi")
 }
 
-func Test07(t *testing.T) {
-	url2file(t, "https://habr.com")
-
-}
 func Test08(t *testing.T) {
 	url2file(t, "https://www.producthunt.com/posts/emtech-brew")
-}
-
-func Test09(t *testing.T) {
-	url2file(t, "https://www.zakon.kz/top/")
 }
 
 func Test10(t *testing.T) {
@@ -126,7 +110,7 @@ func Test29(t *testing.T) {
 	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(s))
 
 	maxsel := doc.Find("body")
-	txt, link, pageLi := clean.NodeDen2(doc, maxsel, "")
+	txt, link, pageLi := clean.NodeDen(doc, maxsel, "")
 	pageText := txt - link
 	pageLink := link
 
@@ -141,7 +125,7 @@ func Test29(t *testing.T) {
 
 		for _, n := range nodes {
 			nodesel := doc.FindNodes(n)
-			txt, link, licnt := clean.NodeDen2(doc, nodesel, "")
+			txt, link, licnt := clean.NodeDen(doc, nodesel, "")
 
 			score1 := ((txt - link) / pageText)
 			score2 := (1 - link/pageLink)

@@ -163,3 +163,7 @@ func Test30(t *testing.T) {
 	fmt.Println(test.Title)
 	fmt.Println(test.Content)
 }
+
+func Test31(t *testing.T) {
+	url2file(t, "http://4pda.ru/2019/05/30/357825/")
+}

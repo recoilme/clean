@@ -22,19 +22,6 @@ var (
 	whiteTags = " address, article, aside, a, abbr, b, bdi, bdo, big, blockquote, body, br, caption, cite, code, data, dd, del, dfn, div, dl, dt, em, figcaption, figure, footer, h1, h2, h3, h4, h5, h6, html, header, hr, i, img, ins, kbd, li, main, mark, nav, ol, p, pre, q, rp, rt, ruby, s, samp, section, small, span, strike, strong, sub, sup, table, tbody, td, template, tfoot, th, thead, time, tr, tt, u, ul, var,"
 )
 
-type density struct {
-	chars    int
-	tags     int
-	linkchar int
-	linktag  int
-	txt      string
-}
-
-type stat struct {
-	txt float64
-	lin float64
-}
-
 // Preprocess some string
 func Preprocess(fragment string, pretty bool, base *url.URL) (string, error) {
 

@@ -3,9 +3,11 @@ package clean
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -160,12 +162,13 @@ func Clean(s string, extract bool, baseURL *url.URL) (string, error) {
 	if err != nil {
 		return s, err
 	}
-	//ioutil.WriteFile("in.htm", []byte(s), 0666)
+	ioutil.WriteFile("in.htm", []byte(s), 0666)
 	n := MainNode(s, baseURL.Hostname())
-	res := ""
-	if n != nil {
-		res = renderNode(n)
+	if n == nil {
+		return "", errors.New("no main node")
 	}
+	res := renderNode(n)
+
 	s, err = Preprocess(res, true, baseURL)
 	if err != nil {
 		return s, err
@@ -192,6 +195,11 @@ func MainNode(s, host string) *html.Node {
 	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(s))
 
 	maxsel := doc.Find("body")
+	articles := maxsel.Find("article").Length()
+	articlesScore := 0.
+	if articles == 1 {
+		articlesScore = 0.2
+	}
 	txt, link, linkint := NodeDen(doc, maxsel, host)
 	pageText := txt - link
 	pageInternalLink := linkint
@@ -211,16 +219,27 @@ func MainNode(s, host string) *html.Node {
 			if pageText > 100 {
 				scoreTxt = ((txt - link) / pageText)
 			}
+			if scoreTxt >= 0.5 {
+				scoreTxt = .5
+			}
 			scoreLink := 0.
 			if pageInternalLink > 10 {
-				scoreLink = float64(1 - intern/pageInternalLink)
+				scoreLink = float64((1. - intern/pageInternalLink) + .3)
 			}
 			scoreElem := 0.
-			if n.Data == "div" || n.Data == "main" || n.Data == "article" {
+			if n.Data == "div" {
 				scoreElem = .2
 			}
-			if scoreTxt > .05 && ((scoreTxt + +scoreLink + scoreElem) > max) {
+			if n.Data == "main" {
+				scoreElem = .3
+			}
+			if n.Data == "article" {
+				scoreElem = .2 + articlesScore
+			}
+
+			if scoreTxt > .05 && ((scoreTxt + scoreLink + scoreElem) > max) {
 				max = scoreTxt + scoreLink + scoreElem
+				log.Println(n.Data, (scoreTxt + scoreLink + scoreElem), scoreTxt, scoreLink, scoreElem, intern)
 				maxNode = n
 			}
 		}

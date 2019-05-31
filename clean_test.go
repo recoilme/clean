@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -167,3 +168,32 @@ func Test30(t *testing.T) {
 func Test31(t *testing.T) {
 	url2file(t, "http://4pda.ru/2019/05/30/357825/")
 }
+
+func Test32(t *testing.T) {
+	url2file(t, "https://habr.com/ru/post/454006/?utm_source=habrahabr&utm_medium=rss&utm_campaign=454006")
+}
+
+func Test33(t *testing.T) {
+	//url2file(t, "https://habr.com/ru/post/454048/")
+	s, _ := clean.GetUtf8("https://www.zakon.kz/")
+	u, _ := url.Parse("https://www.zakon.kz/")
+	//s := `<html><body> <strong><div>note:</div></strong> <p> a pargraph<a href='http://ya.ru'>with a link</a>in it. </p><ul><li>some <em>emphatic words</em> here.</li><li>more words.</li></ul></body></html>`
+	s, _ = clean.Preprocess(s, false, u)
+	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(s))
+	host := "www.zakon.kz"
+	maxsel := doc.Find("body")
+	internalLink := 0.
+	maxsel.Find("a").Each(func(n int, s *goquery.Selection) {
+		if href, ok := s.Attr("href"); ok {
+			if strings.Contains(href, host) {
+				internalLink++
+				log.Println(href)
+			}
+		}
+	})
+	log.Println(internalLink)
+}
+
+//http://vesti.kz/vhl/265536/
+
+//https://www.zakon.kz/

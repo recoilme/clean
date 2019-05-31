@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -239,7 +238,7 @@ func MainNode(s, host string) *html.Node {
 
 			if scoreTxt > .05 && ((scoreTxt + scoreLink + scoreElem) > max) {
 				max = scoreTxt + scoreLink + scoreElem
-				log.Println(n.Data, (scoreTxt + scoreLink + scoreElem), scoreTxt, scoreLink, scoreElem, intern)
+				//log.Println(n.Data, (scoreTxt + scoreLink + scoreElem), scoreTxt, scoreLink, scoreElem, intern)
 				maxNode = n
 			}
 		}

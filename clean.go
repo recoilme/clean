@@ -321,6 +321,26 @@ func URI(u string, extract bool) (s string, err error) {
 	return
 }
 
+// URI2TXT get content from url and clean
+func URI2TXT(u string, extract bool) (s, text string, err error) {
+	text = ""
+	s, err = GetUtf8(u)
+	if err != nil {
+		return
+	}
+	uNew, err := url.Parse(u)
+	if err != nil {
+		uNew = nil
+	}
+	s, err = Clean(s, extract, uNew)
+	if err != nil {
+		return
+	}
+	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(s))
+	text = doc.Text()
+	return
+}
+
 func renderNode(n *html.Node) string {
 	var buf bytes.Buffer
 	w := io.Writer(&buf)

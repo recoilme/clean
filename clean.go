@@ -61,7 +61,7 @@ func Preprocess(fragment string, pretty bool, base *url.URL) (string, error) {
 					for {
 						k, v, m := t.TagAttr()
 						if string(k) == "src" {
-							buf.WriteString(fmt.Sprintf(" <img src=\"%s\"/> ", fixURL(string(v))))
+							buf.WriteString(fmt.Sprintf(" <img src=\"%s\"/> ", string(v))) //fixURL(string(v))))
 						}
 						if !m {
 							break
@@ -182,8 +182,8 @@ func Clean(s string, extract bool, baseURL *url.URL) (string, error) {
 	//	break
 	//}
 	//}
-	s = "<!DOCTYPE html>\n<html>\n<head>\n <meta charset=\"utf-8\"><link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/gh/kognise/water.css@latest/dist/dark.min.css\">\n</head>\n<body>" + s
-	s = s + "</body></html>"
+	//s = "<!DOCTYPE html>\n<html>\n<head>\n <meta charset=\"utf-8\"><link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/gh/kognise/water.css@latest/dist/dark.min.css\">\n</head>\n<body>" + s
+	//s = s + "</body></html>"
 	return s, nil
 }
 

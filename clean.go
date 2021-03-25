@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	whiteTags = " address, article, aside, a, abbr, b, bdi, bdo, big, blockquote, body, br, caption, cite, code, data, dd, del, dfn, div, dl, dt, em, figcaption, figure, footer, h1, h2, h3, h4, h5, h6, html, header, hr, i, img, ins, kbd, li, main, mark, nav, ol, p, pre, q, rp, rt, ruby, s, samp, section, small, span, strike, strong, sub, sup, table, tbody, td, template, tfoot, th, thead, time, tr, tt, u, ul, var,"
+	whiteTags = " address, article, aside, a, abbr, b, bdi, bdo, big, blockquote, body, br, caption, cite, code, data, dd, del, dfn, div, dl, dt, em, figcaption, figure, footer, h1, h2, h3, h4, h5, h6, html, header, hr, i, img, ins, kbd, li, main, mark, nav, ol, p, pre, q, rp, rt, ruby, s, samp, section, small, span, strike, strong, sub, sup, table, tbody, td, template, tfoot, th, thead, time, tr, tt, u, ul, var, iframe,"
 )
 
 // Preprocess some string
@@ -63,6 +63,22 @@ func Preprocess(fragment string, pretty bool, base *url.URL) (string, error) {
 						if string(k) == "src" {
 							buf.WriteString(fmt.Sprintf(" <img src=\"%s\"/> ", string(v))) //fixURL(string(v))))
 						}
+						if string(k) == "data-src" {
+							buf.WriteString(fmt.Sprintf(" <img src=\"%s\"/> ", string(v))) //fixURL(string(v))))
+						}
+						if !m {
+							break
+						}
+					}
+				}
+			}
+			if string(tagName) == "iframe" {
+				if hasAttr {
+					for {
+						k, v, m := t.TagAttr()
+						if string(k) == "src" {
+							buf.WriteString(fmt.Sprintf(" <iframe src=\"%s\"/> ", string(v))) //fixURL(string(v))))
+						}
 						if !m {
 							break
 						}
@@ -96,6 +112,21 @@ func Preprocess(fragment string, pretty bool, base *url.URL) (string, error) {
 								k, v, m := t.TagAttr()
 								if string(k) == "src" {
 									buf.WriteString(fmt.Sprintf(" <img src=\"%s\">", fixURL(string(v))))
+								}
+								if string(k) == "data-src" {
+									buf.WriteString(fmt.Sprintf(" <img src=\"%s\">", fixURL(string(v))))
+								}
+								if !m {
+									break
+								}
+							}
+						}
+					case "iframe":
+						if hasAttr {
+							for {
+								k, v, m := t.TagAttr()
+								if string(k) == "src" {
+									buf.WriteString(fmt.Sprintf(" <iframe src=\"%s\">", fixURL(string(v))))
 								}
 								if !m {
 									break
@@ -161,7 +192,9 @@ func Clean(s string, extract bool, baseURL *url.URL) (string, error) {
 	if err != nil {
 		return s, err
 	}
-	ioutil.WriteFile("in.htm", []byte(s), 0666)
+	if extract {
+		ioutil.WriteFile("in.htm", []byte(s), 0666)
+	}
 	n := MainNode(s, baseURL.Hostname())
 	if n == nil {
 		return "", errors.New("no main node")

@@ -58,13 +58,16 @@ func Preprocess(fragment string, pretty bool, base *url.URL) (string, error) {
 			}
 			if string(tagName) == "img" {
 				if hasAttr {
+					handled := false
 					for {
 						k, v, m := t.TagAttr()
-						if string(k) == "src" {
+						if string(k) == "src" && !handled && string(v) != "" {
 							buf.WriteString(fmt.Sprintf(" <img src=\"%s\"/> ", string(v))) //fixURL(string(v))))
+							handled = true
 						}
-						if string(k) == "data-src" {
+						if string(k) == "data-src" && !handled && string(v) != "" {
 							buf.WriteString(fmt.Sprintf(" <img src=\"%s\"/> ", string(v))) //fixURL(string(v))))
+							handled = true
 						}
 						if !m {
 							break
@@ -108,13 +111,16 @@ func Preprocess(fragment string, pretty bool, base *url.URL) (string, error) {
 						}
 					case "img":
 						if hasAttr {
+							handled := false
 							for {
 								k, v, m := t.TagAttr()
-								if string(k) == "src" {
+								if string(k) == "src" && !handled && string(v) != "" {
 									buf.WriteString(fmt.Sprintf(" <img src=\"%s\">", fixURL(string(v))))
+									handled = true
 								}
-								if string(k) == "data-src" {
+								if string(k) == "data-src" && !handled && string(v) != "" {
 									buf.WriteString(fmt.Sprintf(" <img src=\"%s\">", fixURL(string(v))))
+									handled = true
 								}
 								if !m {
 									break

@@ -20,9 +20,9 @@ func main() {
 		link := u.Query().Get("url")
 
 		if link != "" {
-			content, _ = clean.URI(link, true)
+			_, content, _ = clean.URI2TXT(link, true) //clean.URI(link, true)
 		}
 		fmt.Fprintf(w, head+body+link+formend+content+footer)
 	})
-	http.ListenAndServe(":80", nil)
+	http.ListenAndServe(":8080", nil)
 }

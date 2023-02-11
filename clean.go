@@ -192,7 +192,7 @@ func Preprocess(fragment string, pretty bool, base *url.URL) (string, error) {
 	}
 }
 
-//Clean return cleaned html
+// Clean return cleaned html
 func Clean(s string, extract bool, baseURL *url.URL) (string, error) {
 	s, err := Preprocess(s, false, baseURL)
 	if err != nil {
@@ -302,7 +302,7 @@ func GetUtf8(geturl string) (s string, err error) {
 	defHeaders := make(map[string]string)
 	defHeaders["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.14; rv:65.0) Gecko/20100101 Firefox/65.0"
 	defHeaders["Accept"] = "text/html,application/xhtml+xml,application/xml,application/rss+xml;q=0.9,image/webp,*/*;q=0.8"
-	defHeaders["Accept-Language"] = "ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3"
+	defHeaders["Accept-Language"] = "en-US;q=0.7,en;q=0.3"
 	t := time.Second * 10
 
 	ctx, cncl := context.WithTimeout(context.Background(), t)
